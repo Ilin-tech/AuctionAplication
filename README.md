@@ -1,0 +1,1 @@
+----> Try to connect the database so the app can work properly. <--- 
