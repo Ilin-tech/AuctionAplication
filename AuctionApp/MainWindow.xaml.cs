@@ -7,74 +7,72 @@ using System.Windows;
 using System.Windows.Controls; 
 using System.Windows.Threading;
 
-/*
-
 namespace AuctionApp
 {
-    // Clasa principală a ferestrei, care implementează INotifyPropertyChanged pentru binding
+    // Main window class that implements INotifyPropertyChanged for data binding
     public partial class MainWindow : Window, INotifyPropertyChanged
     {
-        // Lista de produse afișată în UI, folosită cu binding
+        // List of products displayed in the UI, used with binding
         private ObservableCollection<Product> products = new ObservableCollection<Product>();
 
-        // Temporizator pentru actualizarea timpului rămas al licitațiilor
+        // Timer for updating the remaining time of auctions
         private DispatcherTimer timer;
 
-        // Utilizatorul curent logat (null dacă nu este logat)
+        // Currently logged-in user (null if not logged in)
         private User currentUser = null;
 
-        // String-ul de conectare la baza de date, preluat din App.config
+        // Database connection string, retrieved from App.config
         private string connectionString = ConfigurationManager.ConnectionStrings["AuctionDBConnection"].ConnectionString;
 
-        // Variabilă privată pentru starea de administrator
+        // Private variable for admin status
         private bool _isAdmin;
 
-        // Proprietate publică pentru a verifica dacă utilizatorul este admin, cu notificare la modificare
+        // Public property to check if the user is an admin, with change notification
         public bool IsAdmin
         {
             get => _isAdmin;
             set
             {
                 _isAdmin = value;
-                OnPropertyChanged(nameof(IsAdmin)); // Notifică UI-ul despre schimbarea stării
+                OnPropertyChanged(nameof(IsAdmin)); // Notify UI about the change
             }
         }
 
-        // Constructorul ferestrei principale
+        // Constructor for the main window
         public MainWindow()
         {
-            InitializeComponent(); // Inițializează componentele definite în XAML
-            DataContext = this; // Setează DataContext-ul ferestrei la instanța curentă
-            ProductsListView.ItemsSource = products; // Leagă lista de produse la ListView din XAML
-            LoadProducts(); // Încarcă produsele inițiale din baza de date
+            InitializeComponent(); // Initialize components defined in XAML
+            DataContext = this; // Set the window's DataContext to this instance
+            ProductsListView.ItemsSource = products; // Bind the product list to the ListView in XAML
+            LoadProducts(); // Load initial products from the database
 
-            // Configurează temporizatorul pentru a rula la fiecare secundă
+            // Configure the timer to run every second
             timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            timer.Tick += Timer_Tick; // Leagă evenimentul Tick la metodă
-            timer.Start(); // Pornește temporizatorul
+            timer.Tick += Timer_Tick; // Bind Tick event to method
+            timer.Start(); // Start the timer
 
-            // Oprește temporizatorul când fereastra se închide pentru a evita blocarea procesului
+            // Stop the timer when the window closes to avoid process hang
             Closed += (s, e) => timer.Stop();
         }
 
-        // Metodă apelată la fiecare secundă de temporizator
+        // Method called every second by the timer
         [Obsolete]
         private void Timer_Tick(object sender, EventArgs e)
         {
             foreach (var product in products)
             {
-                if (product.IsActive) // Verifică doar produsele active
+                if (product.IsActive) // Only check active products
                 {
-                    var timeRemaining = product.AuctionEndTime - DateTime.Now; // Calculează timpul rămas
-                    product.TimeRemaining = timeRemaining.TotalSeconds > 0 ? timeRemaining.ToString(@"mm\:ss") : "Expirat"; // Actualizează afișarea
+                    var timeRemaining = product.AuctionEndTime - DateTime.Now; // Calculate remaining time
+                    product.TimeRemaining = timeRemaining.TotalSeconds > 0 ? timeRemaining.ToString(@"mm\:ss") : "Expired"; // Update display
 
-                    if (timeRemaining.TotalSeconds <= 0) // Dacă licitația a expirat
+                    if (timeRemaining.TotalSeconds <= 0) // If auction expired
                     {
-                        product.IsActive = false; // Marchează produsul ca inactiv
+                        product.IsActive = false; // Mark product as inactive
                         using (var conn = new SqlConnection(connectionString))
                         {
                             conn.Open();
-                            // Actualizează starea în baza de date și preia numele câștigătorului
+                            // Update status in DB and retrieve winner's name
                             var cmd = new SqlCommand(
                                 "UPDATE Products SET IsActive = 0 WHERE ProductId = @ProductId;" +
                                 "SELECT Username FROM Users WHERE UserId = @LastBidderId", conn);
@@ -85,13 +83,13 @@ namespace AuctionApp
                             {
                                 if (reader.Read() && !reader.IsDBNull(0))
                                 {
-                                    winner = reader.GetString(0); // Preia numele câștigătorului
+                                    winner = reader.GetString(0); // Get winner's name
                                 }
                             }
                             if (winner != null)
                             {
-                                // Afișează mesajul cu câștigătorul pe thread-ul UI
-                                Dispatcher.Invoke(() => MessageBox.Show($"Licitația pentru {product.Name} s-a încheiat! Câștigător: {winner}"));
+                                // Show winner message on UI thread
+                                Dispatcher.Invoke(() => MessageBox.Show($"Auction for {product.Name} has ended! Winner: {winner}"));
                             }
                         }
                     }
@@ -99,15 +97,15 @@ namespace AuctionApp
             }
         }
 
-        // Încarcă produsele din baza de date și le adaugă în lista products
+        // Load products from the database and add them to the 'products' list
         [Obsolete]
         private void LoadProducts()
         {
-            products.Clear(); // Golește lista existentă
+            products.Clear(); // Clear the existing list
             using (var conn = new SqlConnection(connectionString))
             {
                 conn.Open();
-                // Interogare SQL pentru a prelua toate produsele și ultimul ofertant
+                // SQL query to fetch all products and last bidder info
                 var cmd = new SqlCommand(
                     "SELECT p.ProductId, p.Name, p.InitialPrice, p.CurrentPrice, p.AuctionStartTime, p.AuctionEndTime, p.LastBidderId, p.IsActive, u.Username " +
                     "FROM Products p LEFT JOIN Users u ON p.LastBidderId = u.UserId", conn);
@@ -117,33 +115,33 @@ namespace AuctionApp
                     {
                         var product = new Product
                         {
-                            ProductId = reader.GetInt32(0), // ID-ul produsului
-                            Name = reader.GetString(1), // Numele produsului
-                            InitialPrice = reader.GetDecimal(2), // Prețul inițial
-                            CurrentPrice = reader.GetDecimal(3), // Prețul curent
-                            AuctionStartTime = reader.GetDateTime(4), // Data de start a licitației
-                            AuctionEndTime = reader.GetDateTime(5), // Data de sfârșit a licitației
-                            LastBidderId = reader.IsDBNull(6) ? (int?)null : reader.GetInt32(6), // ID-ul ultimului ofertant (dacă există)
-                            IsActive = reader.GetBoolean(7), // Starea licitației (activă/inactivă)
-                            LastBidderUsername = reader.IsDBNull(8) ? "N/A" : reader.GetString(8), // Numele ultimului ofertant
-                            CanBid = currentUser != null && currentUser.Role == "User" && reader.GetBoolean(7) // Poate oferta doar utilizatorul obișnuit logat
+                            ProductId = reader.GetInt32(0),
+                            Name = reader.GetString(1),
+                            InitialPrice = reader.GetDecimal(2),
+                            CurrentPrice = reader.GetDecimal(3),
+                            AuctionStartTime = reader.GetDateTime(4),
+                            AuctionEndTime = reader.GetDateTime(5),
+                            LastBidderId = reader.IsDBNull(6) ? (int?)null : reader.GetInt32(6),
+                            IsActive = reader.GetBoolean(7),
+                            LastBidderUsername = reader.IsDBNull(8) ? "N/A" : reader.GetString(8),
+                            CanBid = currentUser != null && currentUser.Role == "User" && reader.GetBoolean(7)
                         };
                         var timeRemaining = product.AuctionEndTime - DateTime.Now;
-                        product.TimeRemaining = timeRemaining.TotalSeconds > 0 ? timeRemaining.ToString(@"mm\:ss") : "Expirat"; // Setează timpul rămas
-                        products.Add(product); // Adaugă produsul în listă
+                        product.TimeRemaining = timeRemaining.TotalSeconds > 0 ? timeRemaining.ToString(@"mm\:ss") : "Expired";
+                        products.Add(product);
                     }
                 }
             }
         }
 
-        // Eveniment pentru butonul de login
+        // Event for login button
         [Obsolete]
         private void LoginButton_Click(object sender, RoutedEventArgs e)
         {
             using (var conn = new SqlConnection(connectionString))
             {
                 conn.Open();
-                // Verifică autentificarea utilizatorului
+                // Authenticate user
                 var cmd = new SqlCommand("SELECT UserId, Role, Username FROM Users WHERE Username = @Username AND Password = @Password", conn);
                 cmd.Parameters.AddWithValue("@Username", UsernameTextBox.Text);
                 cmd.Parameters.AddWithValue("@Password", PasswordTextBox.Text);
@@ -153,44 +151,45 @@ namespace AuctionApp
                     {
                         currentUser = new User
                         {
-                            UserId = reader.GetInt32(0), // ID-ul utilizatorului
-                            Role = reader.GetString(1), // Rolul (Admin/User)
-                            Username = reader.GetString(2) // Numele utilizatorului
+                            UserId = reader.GetInt32(0),
+                            Role = reader.GetString(1),
+                            Username = reader.GetString(2)
                         };
-                        UserStatusTextBlock.Text = $"Logat ca: {UsernameTextBox.Text} ({currentUser.Role})"; // Actualizează starea în UI
-                        IsAdmin = currentUser.Role == "Admin"; // Setează starea de admin
-                        LoadProducts(); // Reîncarcă produsele cu permisiuni actualizate
+                        UserStatusTextBlock.Text = $"Logged in as: {UsernameTextBox.Text} ({currentUser.Role})";
+                        IsAdmin = currentUser.Role == "Admin";
+                        LoadProducts();
                     }
                     else
                     {
-                        MessageBox.Show("Autentificare eșuată!"); // Mesaj de eroare dacă autentificarea eșuează
+                        MessageBox.Show("Login failed!");
                     }
                 }
             }
         }
 
-        // Eveniment pentru butonul de logout
+        // Event for logout button
         private void LogoutButton_Click(object sender, RoutedEventArgs e)
         {
-            currentUser = null; // Resetează utilizatorul curent
-            UserStatusTextBlock.Text = "Neautentificat"; // Actualizează starea în UI
-            IsAdmin = false; // Resetează starea de admin
-            LoadProducts(); // Reîncarcă produsele fără permisiuni de utilizator
+            currentUser = null;
+            UserStatusTextBlock.Text = "Not logged in";
+            IsAdmin = false;
+            LoadProducts();
         }
 
-        // Eveniment pentru butonul de plasare a unei oferte
+        // Event for placing a bid
         [Obsolete]
         private void PlaceBidButton_Click(object sender, RoutedEventArgs e)
         {
-            if (currentUser == null || currentUser.Role != "User") return; // Verifică dacă utilizatorul este logat și obișnuit
+            if (currentUser == null || currentUser.Role != "User") return;
 
             var button = (Button)sender;
-            var product = (Product)button.DataContext; // Preia produsul asociat butonului
+            var product = (Product)button.DataContext;
 
             using (var conn = new SqlConnection(connectionString))
             {
                 conn.Open();
-                // Verifică dacă licitația este activă
+
+                // Check if auction is still active
                 var checkCmd = new SqlCommand("SELECT IsActive, AuctionEndTime FROM Products WHERE ProductId = @ProductId", conn);
                 checkCmd.Parameters.AddWithValue("@ProductId", product.ProductId);
                 using (var reader = checkCmd.ExecuteReader())
@@ -201,81 +200,79 @@ namespace AuctionApp
                         DateTime endTime = reader.GetDateTime(1);
                         if (!isActive || endTime < DateTime.Now)
                         {
-                            MessageBox.Show("Licitația s-a încheiat!"); // Mesaj dacă licitația nu mai este valabilă
+                            MessageBox.Show("The auction has ended!");
                             LoadProducts();
                             return;
                         }
                     }
                 }
 
-                // Actualizează prețul, ultimul ofertant și timpul rămas, apoi inserează oferta în tabelul Bids
+                // Update product and insert bid
                 var cmd = new SqlCommand(
                     "UPDATE Products SET CurrentPrice = CurrentPrice + 1, LastBidderId = @UserId, AuctionEndTime = @NewEndTime WHERE ProductId = @ProductId;" +
                     "INSERT INTO Bids (ProductId, UserId, BidAmount, BidTime) VALUES (@ProductId, @UserId, @BidAmount, @BidTime);", conn);
                 cmd.Parameters.AddWithValue("@UserId", currentUser.UserId);
                 cmd.Parameters.AddWithValue("@ProductId", product.ProductId);
-                cmd.Parameters.AddWithValue("@NewEndTime", DateTime.Now.AddMinutes(2)); // Resetează timpul la 2 minute
-                cmd.Parameters.AddWithValue("@BidAmount", product.CurrentPrice + 1); // Crește prețul cu 1
-                cmd.Parameters.AddWithValue("@BidTime", DateTime.Now); // Data ofertei
+                cmd.Parameters.AddWithValue("@NewEndTime", DateTime.Now.AddMinutes(2));
+                cmd.Parameters.AddWithValue("@BidAmount", product.CurrentPrice + 1);
+                cmd.Parameters.AddWithValue("@BidTime", DateTime.Now);
                 cmd.ExecuteNonQuery();
 
-                product.LastBidderUsername = currentUser.Username; // Actualizează local ultimul ofertant
+                product.LastBidderUsername = currentUser.Username;
             }
-            LoadProducts(); // Reîncarcă lista pentru a reflecta modificările
+            LoadProducts();
         }
 
-        // Eveniment pentru butonul de adăugare a unui produs
+        // Event for adding a product
         [Obsolete]
         private void AddProductButton_Click(object sender, RoutedEventArgs e)
         {
-            if (currentUser == null || currentUser.Role != "Admin") return; // Verifică dacă utilizatorul este admin
+            if (currentUser == null || currentUser.Role != "Admin") return;
 
             using (var conn = new SqlConnection(connectionString))
             {
                 conn.Open();
-                // Inserează un nou produs în baza de date
                 var cmd = new SqlCommand(
                     "INSERT INTO Products (Name, InitialPrice, CurrentPrice, AuctionStartTime, AuctionEndTime) " +
                     "VALUES (@Name, @Price, @Price, @StartTime, @EndTime)", conn);
-                cmd.Parameters.AddWithValue("@Name", NewProductNameTextBox.Text); // Numele introdus de admin
-                cmd.Parameters.AddWithValue("@Price", decimal.Parse(NewProductPriceTextBox.Text)); // Prețul introdus
-                cmd.Parameters.AddWithValue("@StartTime", DateTime.Now); // Data curentă ca start
-                cmd.Parameters.AddWithValue("@EndTime", DateTime.Now.AddMinutes(2)); // Sfârșit peste 2 minute
+                cmd.Parameters.AddWithValue("@Name", NewProductNameTextBox.Text);
+                cmd.Parameters.AddWithValue("@Price", decimal.Parse(NewProductPriceTextBox.Text));
+                cmd.Parameters.AddWithValue("@StartTime", DateTime.Now);
+                cmd.Parameters.AddWithValue("@EndTime", DateTime.Now.AddMinutes(2));
                 cmd.ExecuteNonQuery();
             }
-            LoadProducts(); // Reîncarcă lista cu noul produs
+            LoadProducts();
         }
 
-        // Eveniment pentru butonul de ștergere a unui produs
+        // Event for deleting a product
         [Obsolete]
         private void DeleteProductButton_Click(object sender, RoutedEventArgs e)
         {
-            if (currentUser == null || currentUser.Role != "Admin") return; // Verifică dacă utilizatorul este admin
+            if (currentUser == null || currentUser.Role != "Admin") return;
 
-            var selectedProduct = (Product)ProductsListView.SelectedItem; // Preia produsul selectat din ListView
+            var selectedProduct = (Product)ProductsListView.SelectedItem;
             if (selectedProduct == null)
             {
-                MessageBox.Show("Selectează un produs pentru a-l șterge!"); // Mesaj dacă nu este selectat niciun produs
+                MessageBox.Show("Please select a product to delete!");
                 return;
             }
 
             using (var conn = new SqlConnection(connectionString))
             {
                 conn.Open();
-                // Șterge mai întâi ofertele asociate produsului pentru a respecta integritatea referențială
+
                 var deleteBidsCmd = new SqlCommand("DELETE FROM Bids WHERE ProductId = @ProductId", conn);
                 deleteBidsCmd.Parameters.AddWithValue("@ProductId", selectedProduct.ProductId);
                 deleteBidsCmd.ExecuteNonQuery();
 
-                // Șterge produsul din tabelul Products
                 var deleteProductCmd = new SqlCommand("DELETE FROM Products WHERE ProductId = @ProductId", conn);
                 deleteProductCmd.Parameters.AddWithValue("@ProductId", selectedProduct.ProductId);
                 deleteProductCmd.ExecuteNonQuery();
             }
-            LoadProducts(); // Reîncarcă lista fără produsul șters
+            LoadProducts();
         }
 
-        // Eveniment pentru notificarea schimbărilor de proprietăți către UI
+        // Event for notifying UI about property changes
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged(string propertyName)
         {
@@ -283,58 +280,57 @@ namespace AuctionApp
         }
     }
 
-    // Clasa care definește un produs, cu suport pentru notificări de modificare
+    // Class defining a product with property change notification support
     public class Product : INotifyPropertyChanged
     {
-        public int ProductId { get; set; } // ID-ul unic al produsului
-        public string Name { get; set; } // Numele produsului
-        public decimal InitialPrice { get; set; } // Prețul inițial al produsului
-        public decimal CurrentPrice { get; set; } // Prețul curent al licitației
-        public DateTime AuctionStartTime { get; set; } // Data de start a licitației
-        public DateTime AuctionEndTime { get; set; } // Data de sfârșit a licitației
-        public int? LastBidderId { get; set; } // ID-ul ultimului ofertant (null dacă nu există)
+        public int ProductId { get; set; }
+        public string Name { get; set; }
+        public decimal InitialPrice { get; set; }
+        public decimal CurrentPrice { get; set; }
+        public DateTime AuctionStartTime { get; set; }
+        public DateTime AuctionEndTime { get; set; }
+        public int? LastBidderId { get; set; }
 
-        private string _lastBidderUsername; // Numele ultimului ofertant
+        private string _lastBidderUsername;
         public string LastBidderUsername
         {
             get => _lastBidderUsername;
             set
             {
                 _lastBidderUsername = value;
-                OnPropertyChanged(nameof(LastBidderUsername)); // Notifică UI-ul
+                OnPropertyChanged(nameof(LastBidderUsername));
             }
         }
 
-        private string _timeRemaining; // Timpul rămas până la expirarea licitației
+        private string _timeRemaining;
         public string TimeRemaining
         {
             get => _timeRemaining;
             set
             {
                 _timeRemaining = value;
-                OnPropertyChanged(nameof(TimeRemaining)); // Notifică UI-ul
+                OnPropertyChanged(nameof(TimeRemaining));
             }
         }
 
-        private bool _isActive; // Starea licitației (activă sau inactivă)
+        private bool _isActive;
         public bool IsActive
         {
             get => _isActive;
             set
             {
                 _isActive = value;
-                OnPropertyChanged(nameof(IsActive)); // Notifică UI-ul
-                OnPropertyChanged(nameof(CanBid)); // Actualizează starea butonului de ofertă
-                OnPropertyChanged(nameof(AuctionStatus)); // Actualizează starea afișată
+                OnPropertyChanged(nameof(IsActive));
+                OnPropertyChanged(nameof(CanBid));
+                OnPropertyChanged(nameof(AuctionStatus));
             }
         }
 
-        public bool CanBid { get; set; } // Indică dacă utilizatorul poate plasa o ofertă
+        public bool CanBid { get; set; }
 
-        // Proprietate calculată care afișează starea licitației
-        public string AuctionStatus => IsActive ? "Activă" : (LastBidderId.HasValue ? $"Câștigată de {LastBidderUsername}" : "Expirată fără ofertă");
+        // Computed property displaying auction status
+        public string AuctionStatus => IsActive ? "Active" : (LastBidderId.HasValue ? $"Won by {LastBidderUsername}" : "Expired without bid");
 
-        // Eveniment pentru notificarea schimbărilor de proprietăți
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged(string propertyName)
         {
@@ -342,13 +338,11 @@ namespace AuctionApp
         }
     }
 
-    // Clasa care definește un utilizator
+    // Class defining a user
     public class User
     {
-        public int UserId { get; set; } // ID-ul unic al utilizatorului
-        public string Role { get; set; } // Rolul utilizatorului (Admin/User)
-        public string Username { get; set; } // Numele utilizatorului
+        public int UserId { get; set; }
+        public string Role { get; set; }
+        public string Username { get; set; }
     }
 }
-
-*/
